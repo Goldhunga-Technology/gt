@@ -80,11 +80,30 @@ class AuthUserTokensRepository[TToken: AuthUserTokensModelBase]:
                 internal_details=str(e),
             ) from e
 
+    async def filter_by(self, **kwargs) -> list[TToken]:
+        """Filter token records by arbitrary criteria.
+
+        Args:
+            **kwargs: Keyword arguments passed to filter_by.
+
+        Returns:
+            A list of matching token instances.
+        """
+        try:
+            stmt = select(self.model).filter_by(**kwargs)
+            result = await self.session.execute(stmt)
+            return list(result.scalars().all())
+        except Exception as e:
+            raise CreateException(
+                error="Failed to filter tokens from the database.",
+                internal_details=str(e),
+            ) from e
+
     async def delete_by(self, **kwargs) -> None:
         """Delete token records matching the filter criteria.
 
         Args:
-            **kwargs: Filter keyword arguments passed to filter_by.
+            **kwargs: Keyword arguments passed to filter_by.
         """
         try:
             stmt = select(self.model).filter_by(**kwargs)

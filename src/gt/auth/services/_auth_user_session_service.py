@@ -98,6 +98,29 @@ class AuthUserSessionService[TSession: AuthUserSessionModelBase]:
                 internal_details=str(e),
             ) from e
 
+    async def invalidate_user_sessions(self, user_id: int) -> None:
+        """Invalidate all active sessions belonging to a user.
+
+        Args:
+            user_id: The ID of the user whose sessions should be revoked.
+
+        Raises:
+            DomainException: On unexpected failures.
+        """
+        try:
+            sessions = await self.list_sessions_by_user(user_id)
+            for session in sessions:
+                if session.is_active:
+                    session.revoke()
+                    await self._repository.update(session)
+        except DomainException:
+            raise
+        except Exception as e:
+            raise DomainException(
+                error="Failed to invalidate user sessions.",
+                internal_details=str(e),
+            ) from e
+
     async def invalidate_session(self, session_uuid: str) -> None:
         """Invalidate a session by its UUID.
 

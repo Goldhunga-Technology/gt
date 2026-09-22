@@ -100,6 +100,28 @@ class AuthUserAccountService[TAccount: AuthUserAccountModelBase]:
                 internal_details=str(e),
             ) from e
 
+    async def update_account(self, account: TAccount) -> TAccount:
+        """Update an existing account.
+
+        Args:
+            account: The account model instance with modified attributes.
+
+        Returns:
+            The updated account instance.
+
+        Raises:
+            DomainException: On unexpected failures.
+        """
+        try:
+            return await self._repository.update(account)
+        except DomainException:
+            raise
+        except Exception as e:
+            raise DomainException(
+                error="Failed to update account.",
+                internal_details=str(e),
+            ) from e
+
 
 def get_auth_user_account_service(
     session: AsyncSession, model: type[TAccount]

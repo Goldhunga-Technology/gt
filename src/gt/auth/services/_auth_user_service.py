@@ -16,8 +16,14 @@ from gt.auth.services._auth_user_tokens_service import (
     get_auth_user_tokens_service,
 )
 from gt.exceptions import ConflictException, DomainException
+from gt.exceptions._base_exceptions import InvalidException
 
-from ..events import UserCreatedEvent, event_bus
+from ..events import (
+    UserCreatedEvent,
+    UserDeactivatedEvent,
+    UserProfileUpdatedEvent,
+    event_bus,
+)
 from ..models import AuthUserModel
 from ..repositories import AuthUserRepository
 from ..repositories._auth_user_account_repository import TAccount
@@ -152,6 +158,95 @@ class AuthUserService[
                 internal_details=str(e),
             ) from e
 
+    async def update_profile(
+        self,
+        user: TUser,
+        full_name: str | None = None,
+        avatar_bg: str | None = None,
+        avatar: str | None = None,
+    ) -> TUser:
+        """
+        Update a user's profile fields and publish a profile updated event.
+        """
+        try:
+            if full_name is not None:
+                user.full_name = full_name
+            if avatar_bg is not None:
+                user.avatar_bg = avatar_bg
+            if avatar is not None:
+                user.avatar = avatar
+
+            updated_user = await self.update_user(user)
+
+            await event_bus.publish(
+                UserProfileUpdatedEvent(
+                    user_id=updated_user.id,
+                    full_name=updated_user.full_name,
+                    email=updated_user.email,
+                    user_uuid=updated_user.uuid,
+                    avatar=updated_user.avatar,
+                    avatar_bg=updated_user.avatar_bg,
+                )
+            )
+            return updated_user
+        except DomainException:
+            raise
+        except Exception as e:
+            raise DomainException(
+                error="Failed to update profile.",
+                internal_details=str(e),
+            ) from e
+
+    async def deactivate_user(self, user: TUser, password: str | None = None) -> TUser:
+        """
+        Deactivate a user and revoke all of their sessions.
+        """
+        try:
+            if not user.is_active():
+                raise ConflictException(
+                    error="User is already deactivated.",
+                    errors={"code": "USER_ALREADY_DEACTIVATED"},
+                )
+
+            if password:
+                account = await self._account_service.get_account_by(
+                    user_id=user.id, type="credentials"
+                )
+                if not account or not account.hashed_password:
+                    self._account_service._hash_service.dummy_verify(password)
+                    raise InvalidException(
+                        error="Invalid password.",
+                        errors={"password": "Invalid password."},
+                    )
+                if not self._account_service._hash_service.verify(
+                    account.hashed_password, password
+                ):
+                    raise InvalidException(
+                        error="Invalid password.",
+                        errors={"password": "Invalid password."},
+                    )
+
+            user.status = "inactive"
+            updated_user = await self.update_user(user)
+
+            await self._session_service.invalidate_user_sessions(user_id=user.id)
+
+            await event_bus.publish(
+                UserDeactivatedEvent(
+                    user_id=user.id,
+                    email=user.email,
+                    user_uuid=user.uuid,
+                )
+            )
+            return updated_user
+        except DomainException:
+            raise
+        except Exception as e:
+            raise DomainException(
+                error="Failed to deactivate user.",
+                internal_details=str(e),
+            ) from e
+
     async def get_user_by(self, **kwargs) -> TUser | None:
         """
         Retrieve a user instance based on provided keyword arguments.
@@ -217,6 +312,35 @@ class AuthUserService[
         except Exception as e:
             raise DomainException(
                 error="Failed to generate email verification token.",
+                internal_details=str(e),
+            ) from e
+
+    async def get_password_reset_token(
+        self,
+        user_id: int,
+        password_reset_token_expiry_minutes: int,
+        password_reset_token_digit: int,
+    ) -> tuple[TToken, str]:
+        """
+        Generate a password reset token for the specified user.
+        """
+        try:
+            token = self._random_token(digit=password_reset_token_digit)
+            password_reset_token = await self._token_service.create_token(
+                user_id=user_id,
+                type="password_reset",
+                token_hash=self._account_service._hash_service.deterministic_hash(
+                    token
+                ),
+                expires_at=datetime.now(UTC)
+                + timedelta(minutes=password_reset_token_expiry_minutes),
+            )
+            return password_reset_token, token
+        except DomainException:
+            raise
+        except Exception as e:
+            raise DomainException(
+                error="Failed to generate password reset token.",
                 internal_details=str(e),
             ) from e
 

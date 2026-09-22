@@ -31,7 +31,7 @@ class AuthUserRegisterSchema(BaseModel):
     email: EmailStr = Field(..., max_length=255)
     password: str = Field(..., min_length=8, max_length=128)
     full_name: str | None = None
-    avatar_bg: str = Field(default_factory=random_avatar_color)
+    avatar_bg: str | None = Field(default_factory=random_avatar_color)
 
     @model_validator(mode="after")
     def calculate_full_name(self):

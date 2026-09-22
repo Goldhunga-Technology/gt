@@ -60,3 +60,22 @@ class AuthUserAccountRepository[TAccount: AuthUserAccountModelBase]:
                 error="Failed to retrieve account from the database.",
                 internal_details=str(e),
             ) from e
+
+    async def update(self, account: TAccount) -> TAccount:
+        """Update an existing account record in the database.
+
+        Args:
+            account: The account model instance to update.
+
+        Returns:
+            The updated account instance.
+        """
+        try:
+            await self.session.flush()
+            await self.session.refresh(account)
+            return account
+        except Exception as e:
+            raise CreateException(
+                error="Failed to update account in the database.",
+                internal_details=str(e),
+            ) from e

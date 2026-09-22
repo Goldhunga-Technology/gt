@@ -108,6 +108,28 @@ class AuthUserTokensService[TToken: AuthUserTokensModelBase]:
                 internal_details=str(e),
             ) from e
 
+    async def get_tokens_by(self, **kwargs) -> list[TToken]:
+        """Retrieve tokens matching the filter criteria.
+
+        Args:
+            **kwargs: Filter keyword arguments.
+
+        Returns:
+            A list of matching token instances.
+
+        Raises:
+            DomainException: On unexpected failures.
+        """
+        try:
+            return await self._repository.filter_by(**kwargs)
+        except DomainException:
+            raise
+        except Exception as e:
+            raise DomainException(
+                error="Failed to retrieve tokens.",
+                internal_details=str(e),
+            ) from e
+
     async def delete_tokens_by(self, **kwargs) -> None:
         """Delete tokens matching the filter criteria.
 
