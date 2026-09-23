@@ -31,7 +31,9 @@ class OrganizationServiceRegistry:
     def organization(self):
         """Service for organization operations."""
         return get_organization_service(
-            session=self._session, model=self._organization_model
+            session=self._session,
+            model=self._organization_model,
+            member_model=self._member_model,
         )
 
     @cached_property

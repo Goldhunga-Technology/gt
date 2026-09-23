@@ -124,6 +124,38 @@ class TestOrganizationService:
         )
         assert await service.is_any_organization_setup() is True
 
+    async def test_get_organization_by_user_id(self, models):
+        service = get_organization_service(
+            session=MagicMock(),
+            model=models["organization_model"],
+            member_model=models["organization_member_model"],
+        )
+
+        service._repository.get_by = AsyncMock(return_value=make_organization(models))
+        assert service._member_repository is not None
+        service._member_repository.filter_by = AsyncMock(
+            return_value=[make_member(models, user_id=2)]
+        )
+
+        result = await service.get_organization_by_user_id(user_id=2)
+
+        assert result is not None
+        assert result.slug == "my-org"
+
+    async def test_get_organization_by_user_id_returns_none_when_no_membership(
+        self, models
+    ):
+        service = get_organization_service(
+            session=MagicMock(),
+            model=models["organization_model"],
+            member_model=models["organization_member_model"],
+        )
+
+        assert service._member_repository is not None
+        service._member_repository.filter_by = AsyncMock(return_value=[])
+
+        assert await service.get_organization_by_user_id(user_id=2) is None
+
 
 class TestOrganizationMemberService:
     async def test_add_member(self, models):

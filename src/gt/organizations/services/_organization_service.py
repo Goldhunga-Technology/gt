@@ -9,7 +9,10 @@ from gt.organizations.events import (
     OrganizationUpdatedEvent,
 )
 from gt.organizations.models import OrganizationModel, TOrganization, generate_slug
-from gt.organizations.repositories import OrganizationRepository
+from gt.organizations.repositories import (
+    OrganizationMemberRepository,
+    OrganizationRepository,
+)
 
 
 class OrganizationService[TOrganization: OrganizationModel]:
@@ -19,15 +22,19 @@ class OrganizationService[TOrganization: OrganizationModel]:
         self,
         repository: OrganizationRepository[TOrganization],
         model: type[TOrganization],
+        member_repository: OrganizationMemberRepository | None = None,
     ):
         """Initialize the service with a repository and model.
 
         Args:
             repository: The OrganizationRepository instance.
             model: The OrganizationModel class.
+            member_repository: An optional OrganizationMemberRepository instance
+                used to resolve organization memberships.
         """
         self._repository = repository
         self._model = model
+        self._member_repository = member_repository
 
     async def create_organization(
         self,
@@ -216,18 +223,59 @@ class OrganizationService[TOrganization: OrganizationModel]:
                 internal_details=str(e),
             ) from e
 
+    async def get_organization_by_user_id(self, user_id: int) -> TOrganization | None:
+        """Retrieve the organization the given user belongs to.
+
+        Args:
+            user_id: The ID of the user.
+
+        Returns:
+            The first organization the user is a member of, or None when the
+            user has no membership.
+
+        Raises:
+            DomainException: On unexpected failures.
+        """
+        try:
+            if self._member_repository is None:
+                return None
+            memberships = await self._member_repository.filter_by(user_id=user_id)
+            if not memberships:
+                return None
+            return await self._repository.get_by(id=memberships[0].organization_id)
+        except DomainException:
+            raise
+        except Exception as e:
+            raise DomainException(
+                error="Failed to retrieve organization by user.",
+                internal_details=str(e),
+            ) from e
+
 
 def get_organization_service(
-    session: AsyncSession, model: type[TOrganization]
+    session: AsyncSession,
+    model: type[TOrganization],
+    member_model: type | None = None,
 ) -> OrganizationService[TOrganization]:
     """Factory function to create an OrganizationService instance.
 
     Args:
         session: Async SQLAlchemy session.
         model: The OrganizationModel class.
+        member_model: An optional OrganizationMemberModel class used to resolve
+            organization memberships.
 
     Returns:
         A configured OrganizationService.
     """
     repository = OrganizationRepository(session=session, model=model)
-    return OrganizationService(repository=repository, model=model)
+    member_repository = (
+        OrganizationMemberRepository(session=session, model=member_model)
+        if member_model
+        else None
+    )
+    return OrganizationService(
+        repository=repository,
+        model=model,
+        member_repository=member_repository,
+    )
