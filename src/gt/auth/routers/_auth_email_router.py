@@ -4,7 +4,6 @@ from starlette.status import HTTP_200_OK
 
 from gt.auth.dependencies._guards._require_access_guard import require_access
 from gt.auth.schemas._auth_email_schemas import AuthEmailVerifySchema
-from gt.auth.services._auth_email_service import get_auth_email_service
 from gt.response import cr
 
 from ..uow import AuthUOW
@@ -14,11 +13,6 @@ def create_email_router(*, auth):
     """
     Create a router for email verification operations.
     """
-    user_model = auth.user_model
-    user_tokens_model = auth.user_tokens_model
-    account_model = auth.user_account_model
-    session_model = auth.user_session_model
-
     email_token_digit = auth.settings.email_verification_token_digit
     email_token_expiry_minutes = auth.settings.email_verification_token_expiry_minutes
 
@@ -33,13 +27,7 @@ def create_email_router(*, auth):
         """
         Endpoint to verify a user's email address using a verification token.
         """
-        email_service = get_auth_email_service(
-            session=session,
-            user_model=user_model,
-            token_model=user_tokens_model,
-            account_model=account_model,
-            session_model=session_model,
-        )
+        email_service = auth.get_services(session).email
 
         async with AuthUOW(session):
             await email_service.verify_email(
@@ -60,13 +48,7 @@ def create_email_router(*, auth):
         """
         Endpoint to resend the email verification token to the user.
         """
-        email_service = get_auth_email_service(
-            session=session,
-            user_model=user_model,
-            token_model=user_tokens_model,
-            account_model=account_model,
-            session_model=session_model,
-        )
+        email_service = auth.get_services(session).email
 
         async with AuthUOW(session):
             await email_service.resend_verification_email(

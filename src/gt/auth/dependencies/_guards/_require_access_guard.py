@@ -10,6 +10,7 @@ def require_access(
     authenticated: bool = True,
     email_verified: bool = False,
     onboarded: bool = False,
+    custom_checks: list[str] | None = None,
     auth,
 ):
     """
@@ -18,7 +19,7 @@ def require_access(
 
     from gt.auth.dependencies._current_user import current_user
 
-    needs_user = authenticated or email_verified or onboarded
+    needs_user = authenticated or email_verified or onboarded or bool(custom_checks)
 
     async def dependency(
         request: Request,
@@ -43,6 +44,10 @@ def require_access(
 
         if onboarded and user is not None:
             UserPolicies.require_onboarding(user)
+
+        if custom_checks:
+            for check_name in custom_checks:
+                await auth._checks[check_name].check(user=user, session=session)
 
         return user
 

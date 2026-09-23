@@ -8,12 +8,6 @@ from gt.organizations.schemas import (
     OrganizationResponseSchema,
     OrganizationUpdateSchema,
 )
-from gt.organizations.services import (
-    OrganizationMemberService,
-    OrganizationService,
-    get_organization_member_service,
-    get_organization_service,
-)
 from gt.response import cr
 
 
@@ -22,7 +16,6 @@ def create_organization_router(*, organizations):
     Create a router for organization operations.
     """
     session_factory = organizations.session_factory
-    organization_model = organizations.organization_model
     organization_create_schema = (
         organizations.organization_create_schema or OrganizationCreateSchema
     )
@@ -42,21 +35,15 @@ def create_organization_router(*, organizations):
         Endpoint to create a new organization.
         """
         async with session_factory() as session:
-            organization_service: OrganizationService = get_organization_service(
-                session=session, model=organization_model
-            )
-            organization_member_model = organizations.organization_member_model
-            member_service: OrganizationMemberService = get_organization_member_service(
-                session=session, model=organization_member_model
-            )
+            services = organizations.get_services(session)
             async with AuthUOW(session):
-                organization = await organization_service.create_organization(
+                organization = await services.organization.create_organization(
                     name=body.name,
                     owner_id=user.id,
                     description=body.description,
                     logo=body.logo,
                 )
-                await member_service.add_member(
+                await services.member.add_member(
                     organization_id=organization.id,
                     organization_uuid=organization.uuid,
                     user_id=user.id,
@@ -75,9 +62,7 @@ def create_organization_router(*, organizations):
         Endpoint to list all organizations owned by the current user.
         """
         async with session_factory() as session:
-            organization_service: OrganizationService = get_organization_service(
-                session=session, model=organization_model
-            )
+            organization_service = organizations.get_services(session).organization
             organizations_list = await organization_service.list_organizations_by_owner(
                 owner_id=user.id
             )
@@ -96,9 +81,7 @@ def create_organization_router(*, organizations):
         Endpoint to retrieve an organization by its slug.
         """
         async with session_factory() as session:
-            organization_service: OrganizationService = get_organization_service(
-                session=session, model=organization_model
-            )
+            organization_service = organizations.get_services(session).organization
             organization = await organization_service.get_organization_by(slug=slug)
             if not organization:
                 return cr.error(
@@ -127,9 +110,7 @@ def create_organization_router(*, organizations):
         Endpoint to update an organization.
         """
         async with session_factory() as session:
-            organization_service: OrganizationService = get_organization_service(
-                session=session, model=organization_model
-            )
+            organization_service = organizations.get_services(session).organization
             async with AuthUOW(session):
                 organization = await organization_service.get_organization_by(slug=slug)
                 if not organization:

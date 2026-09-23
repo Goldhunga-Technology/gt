@@ -2,11 +2,6 @@ from fastapi.requests import Request
 from starlette.status import HTTP_201_CREATED, HTTP_400_BAD_REQUEST
 
 from gt.auth.schemas._auth_schemas import AuthLoginRequestSchema
-from gt.auth.services import AuthUserService, get_auth_user_service
-from gt.auth.services._auth_login_service import (
-    AuthLoginService,
-    get_auth_login_service,
-)
 from gt.ip import IPService
 from gt.response import cr
 from gt.response._response import get_cookie_response
@@ -21,9 +16,6 @@ def create_user_router(*, auth):
     session_factory = auth.session_factory
     settings = auth.settings
     user_model = auth.user_model
-    user_account_model = auth.user_account_model
-    user_session_model = auth.user_session_model
-    user_tokens_model = auth.user_tokens_model
     user_register_schema = auth.user_register_schema
 
     from fastapi import APIRouter
@@ -37,13 +29,7 @@ def create_user_router(*, auth):
         """
         ip_context = IPService.get_ip_context(request)
         async with session_factory() as session:
-            user_service: AuthUserService = get_auth_user_service(
-                session=session,
-                user_model=user_model,
-                account_model=user_account_model,
-                session_model=user_session_model,
-                token_model=user_tokens_model,
-            )
+            user_service = auth.get_services(session).user
 
             async with AuthUOW(session):
                 user = user_model(
@@ -83,12 +69,7 @@ def create_user_router(*, auth):
         """
         ip_context = IPService.get_ip_context(request)
         async with session_factory() as session:
-            login_service: AuthLoginService = get_auth_login_service(
-                session=session,
-                user_model=user_model,
-                account_model=user_account_model,
-                session_model=user_session_model,
-            )
+            login_service = auth.get_services(session).login
 
             async with AuthUOW(session):
                 _, user_session = await login_service.login(
@@ -128,12 +109,7 @@ def create_user_router(*, auth):
             )
 
         async with session_factory() as session:
-            login_service: AuthLoginService = get_auth_login_service(
-                session=session,
-                user_model=user_model,
-                account_model=user_account_model,
-                session_model=user_session_model,
-            )
+            login_service = auth.get_services(session).login
 
             async with AuthUOW(session):
                 await login_service.logout(session_uuid=session_uuid)

@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase
 
 from gt.auth.dependencies._guards._require_access_guard import require_access
+from gt.auth.interfaces._policy_check_interface import IPolicyCheck
 from gt.auth.models._auth_user_account_model import create_auth_user_account_model
 from gt.auth.models._auth_user_model import create_auth_user_model
 from gt.auth.models._auth_user_onboarding_model import (
@@ -25,6 +26,7 @@ from gt.exceptions._base_exceptions import InvalidException
 from .events import event_bus
 from .models import AuthUserModel, AuthUserOnboardingModelBase
 from .routers import create_auth_router
+from .services import ServiceRegistry
 
 _POLICY_CHECKS_LITERAL = Literal["mfa_required", "email_verified", "onboarded"]
 
@@ -87,6 +89,7 @@ class Auth[TUser: AuthUserModel]:
 
         ## policies
         self._policies: dict[str, Any] = {}
+        self._checks: dict[str, IPolicyCheck] = {}
 
     def init_app(self, app: FastAPI):
         """
@@ -121,12 +124,18 @@ class Auth[TUser: AuthUserModel]:
                 raise ValueError(f"Policy '{name}' is not registered.")
 
             kwargs = {}
+            custom_checks = []
             for c in checks:
-                if c not in _CHECK_TO_GUARD_ARG:
+                if c in _CHECK_TO_GUARD_ARG:
+                    kwargs.update(_CHECK_TO_GUARD_ARG[c])
+                elif c in self._checks:
+                    custom_checks.append(c)
+                else:
                     raise ValueError(f"Unknown policy check '{c}' in policy '{name}'.")
-                kwargs.update(_CHECK_TO_GUARD_ARG[c])
 
-            guard = Depends(require_access(auth=self, **kwargs))
+            guard = Depends(
+                require_access(auth=self, custom_checks=custom_checks, **kwargs)
+            )
 
             sig = inspect.signature(func)
             guard_param = inspect.Parameter(
@@ -215,7 +224,42 @@ class Auth[TUser: AuthUserModel]:
             raise ValueError(f"Policy '{name}' is already registered.")
         self._policies[name] = checks
 
+    def register_check(self, *, name: str, check: IPolicyCheck):
+        """
+        Registers a custom policy check under the given name.
+
+        Custom checks implement the :class:`IPolicyCheck` port and can be
+        referenced in any policy's ``checks`` list alongside the built-in
+        checks (``mfa_required``, ``email_verified``, ``onboarded``).
+        """
+        if name in _CHECK_TO_GUARD_ARG:
+            raise ValueError(f"Policy check '{name}' shadows a built-in check.")
+        if name in self._checks:
+            raise ValueError(f"Policy check '{name}' is already registered.")
+        if not isinstance(check, IPolicyCheck):
+            raise TypeError(
+                "Policy check must implement the IPolicyCheck interface (port)."
+            )
+        self._checks[name] = check
+
     ## ----------------------------------------------- Session Methods ----------------------------------------------- ##
+
+    def get_services(self, session: AsyncSession) -> ServiceRegistry:
+        """
+        Builds a per-session ServiceRegistry with all auth models pre-wired.
+
+        Access any auth service as an attribute of the returned registry, e.g.
+        ``auth.get_services(session).user`` or ``.login``.
+        """
+        return ServiceRegistry(
+            session=session,
+            user_model=self.user_model,
+            account_model=self.user_account_model,
+            session_model=self.user_session_model,
+            token_model=self.user_tokens_model,
+            onboarding_model=self.user_onboarding_model,
+            settings=self.settings,
+        )
 
     async def get_db_session(self) -> AsyncGenerator[AsyncSession]:
         """

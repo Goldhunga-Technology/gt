@@ -1,3 +1,4 @@
+from .adapters import BelongsToOrganizationCheck
 from .events import (
     OrganizationCreatedEvent,
     OrganizationDeletedEvent,
@@ -29,11 +30,13 @@ from .schemas import (
 from .services import (
     OrganizationMemberService,
     OrganizationService,
+    OrganizationServiceRegistry,
     get_organization_member_service,
     get_organization_service,
 )
 
 __all__ = [
+    "BelongsToOrganizationCheck",
     "OrganizationCreateSchema",
     "OrganizationCreatedEvent",
     "OrganizationDeletedEvent",
@@ -50,6 +53,7 @@ __all__ = [
     "OrganizationRepository",
     "OrganizationResponseSchema",
     "OrganizationService",
+    "OrganizationServiceRegistry",
     "OrganizationUpdateSchema",
     "OrganizationUpdatedEvent",
     "Organizations",

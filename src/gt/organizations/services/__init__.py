@@ -3,10 +3,12 @@ from ._organization_member_service import (
     get_organization_member_service,
 )
 from ._organization_service import OrganizationService, get_organization_service
+from ._service_registry import OrganizationServiceRegistry
 
 __all__ = [
     "OrganizationMemberService",
     "OrganizationService",
+    "OrganizationServiceRegistry",
     "get_organization_member_service",
     "get_organization_service",
 ]

@@ -12,14 +12,8 @@ def create_session_router(*, auth):
     Create a router for session-related operations.
     """
     session_factory = auth.session_factory
-    user_session_model = auth.user_session_model
 
     from fastapi import APIRouter
-
-    from gt.auth.services._auth_user_session_service import (
-        AuthUserSessionService,
-        get_auth_user_session_service,
-    )
 
     router = APIRouter(prefix="/session")
 
@@ -36,12 +30,7 @@ def create_session_router(*, auth):
             )
 
         async with session_factory() as session:
-            user_session_service: AuthUserSessionService = (
-                get_auth_user_session_service(
-                    session=session,
-                    model=user_session_model,
-                )
-            )
+            user_session_service = auth.get_services(session).session
 
             # Invalidate the user's session here (implementation depends on your session management)
             current = await user_session_service.get_session_by(uuid=session_uuid)
@@ -78,12 +67,7 @@ def create_session_router(*, auth):
             )
 
         async with session_factory() as session:
-            user_session_service: AuthUserSessionService = (
-                get_auth_user_session_service(
-                    session=session,
-                    model=user_session_model,
-                )
-            )
+            user_session_service = auth.get_services(session).session
 
             # Retrieve all sessions for the current user (implementation depends on your session management)
             current = await user_session_service.get_session_by(uuid=session_uuid)

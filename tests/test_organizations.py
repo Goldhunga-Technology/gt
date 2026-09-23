@@ -3,6 +3,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from gt.exceptions import ConflictException, DomainException
+from gt.organizations import BelongsToOrganizationCheck
 from gt.organizations.models import generate_slug
 from gt.organizations.schemas import OrganizationCreateSchema
 from gt.organizations.services import (
@@ -190,3 +191,38 @@ class TestOrganizationMemberService:
 
         with pytest.raises(DomainException):
             await service.remove_member(None, organization_uuid="test-uuid")
+
+
+class TestBelongsToOrganizationCheck:
+    def make_check(self, *, membership):
+        organizations = MagicMock()
+        services = MagicMock()
+        services.member.get_member_by = AsyncMock(return_value=membership)
+        organizations.get_services.return_value = services
+        return BelongsToOrganizationCheck(organizations)
+
+    async def test_passes_when_member(self, models):
+        user = MagicMock()
+        user.id = 1
+        member = make_member(models, user_id=user.id)
+
+        check = self.make_check(membership=member)
+        await check.check(user=user, session=MagicMock())
+
+    async def test_raises_when_not_member(self, models):
+        user = MagicMock()
+        user.id = 1
+
+        check = self.make_check(membership=None)
+        with pytest.raises(DomainException):
+            await check.check(user=user, session=MagicMock())
+
+    async def test_raises_when_inactive_member(self, models):
+        user = MagicMock()
+        user.id = 1
+        member = make_member(models, user_id=user.id)
+        member.status = "inactive"
+
+        check = self.make_check(membership=member)
+        with pytest.raises(DomainException):
+            await check.check(user=user, session=MagicMock())

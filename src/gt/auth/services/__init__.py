@@ -16,6 +16,7 @@ from ._auth_user_tokens_service import (
     AuthUserTokensService,
     get_auth_user_tokens_service,
 )
+from ._service_registry import ServiceRegistry
 
 __all__ = [
     "AuthLoginService",
@@ -24,6 +25,7 @@ __all__ = [
     "AuthUserService",
     "AuthUserSessionService",
     "AuthUserTokensService",
+    "ServiceRegistry",
     "get_auth_login_service",
     "get_auth_user_account_service",
     "get_auth_user_onboarding_service",

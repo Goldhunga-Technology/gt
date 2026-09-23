@@ -8,12 +8,6 @@ from gt.organizations.schemas import (
     OrganizationMemberResponseSchema,
     OrganizationMemberUpdateSchema,
 )
-from gt.organizations.services import (
-    OrganizationMemberService,
-    OrganizationService,
-    get_organization_member_service,
-    get_organization_service,
-)
 from gt.response import cr
 
 
@@ -22,8 +16,6 @@ def create_organization_member_router(*, organizations):
     Create a router for organization member operations.
     """
     session_factory = organizations.session_factory
-    organization_model = organizations.organization_model
-    organization_member_model = organizations.organization_member_model
     organization_member_add_schema = OrganizationMemberAddSchema
     current_user = organizations.current_user
 
@@ -41,10 +33,8 @@ def create_organization_member_router(*, organizations):
         Endpoint to add a member to an organization.
         """
         async with session_factory() as session:
-            organization_service: OrganizationService = get_organization_service(
-                session=session, model=organization_model
-            )
-            organization = await organization_service.get_organization_by(
+            services = organizations.get_services(session)
+            organization = await services.organization.get_organization_by(
                 slug=organization_slug
             )
             if not organization:
@@ -59,12 +49,9 @@ def create_organization_member_router(*, organizations):
                     errors={"code": "ORGANIZATION_ACCESS_DENIED"},
                 )
 
-            member_service: OrganizationMemberService = get_organization_member_service(
-                session=session, model=organization_member_model
-            )
             async with AuthUOW(session):
                 try:
-                    member = await member_service.add_member(
+                    member = await services.member.add_member(
                         organization_id=organization.id,
                         organization_uuid=organization.uuid,
                         user_id=body.user_id,
@@ -88,10 +75,8 @@ def create_organization_member_router(*, organizations):
         Endpoint to list all members of an organization.
         """
         async with session_factory() as session:
-            organization_service: OrganizationService = get_organization_service(
-                session=session, model=organization_model
-            )
-            organization = await organization_service.get_organization_by(
+            services = organizations.get_services(session)
+            organization = await services.organization.get_organization_by(
                 slug=organization_slug
             )
             if not organization:
@@ -101,10 +86,9 @@ def create_organization_member_router(*, organizations):
                     status_code=HTTP_400_BAD_REQUEST,
                 )
 
-            member_service: OrganizationMemberService = get_organization_member_service(
-                session=session, model=organization_member_model
+            members = await services.member.list_members(
+                organization_id=organization.id
             )
-            members = await member_service.list_members(organization_id=organization.id)
 
         return cr.success(
             data=[
@@ -125,10 +109,8 @@ def create_organization_member_router(*, organizations):
         Endpoint to update an organization member's status.
         """
         async with session_factory() as session:
-            organization_service: OrganizationService = get_organization_service(
-                session=session, model=organization_model
-            )
-            organization = await organization_service.get_organization_by(
+            services = organizations.get_services(session)
+            organization = await services.organization.get_organization_by(
                 slug=organization_slug
             )
             if not organization:
@@ -143,11 +125,8 @@ def create_organization_member_router(*, organizations):
                     errors={"code": "ORGANIZATION_ACCESS_DENIED"},
                 )
 
-            member_service: OrganizationMemberService = get_organization_member_service(
-                session=session, model=organization_member_model
-            )
             async with AuthUOW(session):
-                member = await member_service.get_member_by(
+                member = await services.member.get_member_by(
                     organization_id=organization.id, uuid=member_uuid
                 )
                 if not member:
@@ -157,7 +136,7 @@ def create_organization_member_router(*, organizations):
                         status_code=HTTP_400_BAD_REQUEST,
                     )
                 try:
-                    member = await member_service.update_member(
+                    member = await services.member.update_member(
                         member=member,
                         organization_uuid=organization.uuid,
                         status=body.status,
@@ -184,10 +163,8 @@ def create_organization_member_router(*, organizations):
         Endpoint to remove a member from an organization.
         """
         async with session_factory() as session:
-            organization_service: OrganizationService = get_organization_service(
-                session=session, model=organization_model
-            )
-            organization = await organization_service.get_organization_by(
+            services = organizations.get_services(session)
+            organization = await services.organization.get_organization_by(
                 slug=organization_slug
             )
             if not organization:
@@ -202,11 +179,8 @@ def create_organization_member_router(*, organizations):
                     errors={"code": "ORGANIZATION_ACCESS_DENIED"},
                 )
 
-            member_service: OrganizationMemberService = get_organization_member_service(
-                session=session, model=organization_member_model
-            )
             async with AuthUOW(session):
-                member = await member_service.get_member_by(
+                member = await services.member.get_member_by(
                     organization_id=organization.id, uuid=member_uuid
                 )
                 if not member:
@@ -215,7 +189,7 @@ def create_organization_member_router(*, organizations):
                         errors={"code": "MEMBER_NOT_FOUND"},
                         status_code=HTTP_400_BAD_REQUEST,
                     )
-                await member_service.remove_member(
+                await services.member.remove_member(
                     member, organization_uuid=organization.uuid
                 )
 

@@ -6,7 +6,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from gt.auth.auth import Auth
 from gt.auth.models._auth_user_model import AuthUserModel
-from gt.auth.services._auth_user_service import get_auth_user_service
 from gt.exceptions._base_exceptions import InvalidException
 
 
@@ -23,28 +22,16 @@ async def current_user(
         The current authenticated user object if the session is valid, otherwise raises an HTTPException.
     """
 
-    user_model = auth.user_model
-    account_model = auth.user_account_model
-    session_model = auth.user_session_model
-    token_model = auth.user_tokens_model
+    services = auth.get_services(session)
 
-    # Implementation to retrieve the current user based on session uuid
-    user_service = get_auth_user_service(
-        session=session,
-        user_model=user_model,
-        account_model=account_model,
-        session_model=session_model,
-        token_model=token_model,
-    )
-
-    user_session = await user_service._session_service.get_session_by(uuid=session_uuid)
+    user_session = await services.session.get_session_by(uuid=session_uuid)
 
     if not user_session or not user_session.is_active:
         raise InvalidException(
             error="Invalid or expired session.", errors={"code": "SESSION_INVALID"}
         )
 
-    user = await user_service.get_user_by(id=user_session.user_id)
+    user = await services.user.get_user_by(id=user_session.user_id)
 
     if not user or not user.is_active():
         raise InvalidException(

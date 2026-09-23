@@ -15,6 +15,7 @@ from gt.organizations.models import (
     create_organization_model,
 )
 from gt.organizations.schemas import OrganizationCreateSchema
+from gt.organizations.services._service_registry import OrganizationServiceRegistry
 
 
 class Organizations:
@@ -91,6 +92,21 @@ class Organizations:
             return handler
 
         return decorator
+
+    def get_services(self, session: AsyncSession) -> OrganizationServiceRegistry:
+        """
+        Builds a per-session OrganizationServiceRegistry with the
+        organization models pre-wired.
+
+        Access any organization service as an attribute of the returned
+        registry, e.g. ``organizations.get_services(session).organization``
+        or ``.member``.
+        """
+        return OrganizationServiceRegistry(
+            session=session,
+            organization_model=self.organization_model,
+            member_model=self.organization_member_model,
+        )
 
     async def get_db_session(self) -> AsyncGenerator[AsyncSession]:
         """
