@@ -78,11 +78,15 @@ class Organizations:
         ## event bus
         self.event_bus = event_bus
 
-    def init_app(self, app):
+    def init_app(self, app, prefix: str | None = None):
         """
         Initializes the FastAPI application with organization routes.
+
+        Args:
+            app: The FastAPI application.
+            prefix: An optional path prefix prepended to every organization route.
         """
-        self._register_routers(app)
+        self._register_routers(app, prefix=prefix)
 
     def on(self, event_type: type):
         """
@@ -136,10 +140,14 @@ class Organizations:
         async with self.session_factory() as session:
             yield session
 
-    def _register_routers(self, app):
+    def _register_routers(self, app, prefix: str | None = None):
         """
         Registers organization-related routers to the FastAPI application.
         """
         from gt.organizations.routers import create_organizations_router
 
-        app.include_router(create_organizations_router(organizations=self))
+        routers = create_organizations_router(organizations=self)
+        if prefix:
+            app.include_router(routers, prefix=prefix)
+        else:
+            app.include_router(routers)

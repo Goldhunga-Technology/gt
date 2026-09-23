@@ -93,11 +93,15 @@ class Auth[TUser: AuthUserModel]:
         self._policies: dict[str, Any] = {}
         self._belongs_to_org_check: Callable | None = None
 
-    def init_app(self, app: FastAPI):
+    def init_app(self, app: FastAPI, prefix: str | None = None):
         """
         Initializes the FastAPI application with authentication routes and dependencies.
+
+        Args:
+            app: The FastAPI application.
+            prefix: An optional path prefix prepended to every auth route.
         """
-        self._register_routers(app)
+        self._register_routers(app, prefix=prefix)
         self._register_exceptions(app)
         self._register_middlewares(app)
 
@@ -264,12 +268,15 @@ class Auth[TUser: AuthUserModel]:
 
     ## ----------------------------------------------- Internal Methods ----------------------------------------------- ##
 
-    def _register_routers(self, app: FastAPI):
+    def _register_routers(self, app: FastAPI, prefix: str | None = None):
         """
         Registers authentication-related routers to the FastAPI application.
         """
         routers = create_auth_router(auth=self)
-        app.include_router(routers)
+        if prefix:
+            app.include_router(routers, prefix=prefix)
+        else:
+            app.include_router(routers)
 
     def _register_exceptions(self, app: FastAPI):
         """
