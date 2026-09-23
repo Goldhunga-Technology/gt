@@ -2,7 +2,7 @@ from fastapi import Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from gt.auth.policies import UserPolicies
-from gt.exceptions._base_exceptions import UnauthorizedException
+from gt.exceptions._base_exceptions import DomainException, UnauthorizedException
 
 
 def require_access(
@@ -10,7 +10,7 @@ def require_access(
     authenticated: bool = True,
     email_verified: bool = False,
     onboarded: bool = False,
-    custom_checks: list[str] | None = None,
+    belongs_to_org: bool = False,
     auth,
 ):
     """
@@ -19,7 +19,7 @@ def require_access(
 
     from gt.auth.dependencies._current_user import current_user
 
-    needs_user = authenticated or email_verified or onboarded or bool(custom_checks)
+    needs_user = authenticated or email_verified or onboarded or belongs_to_org
 
     async def dependency(
         request: Request,
@@ -45,9 +45,15 @@ def require_access(
         if onboarded and user is not None:
             UserPolicies.require_onboarding(user)
 
-        if custom_checks:
-            for check_name in custom_checks:
-                await auth._checks[check_name].check(user=user, session=session)
+        if belongs_to_org and user is not None:
+            if auth._belongs_to_org_check is None:
+                raise DomainException(
+                    error="Organization is not set up.",
+                    errors={"code": "ORGANIZATION_NOT_SET_UP"},
+                )
+            await auth._belongs_to_org_check.check_user_belongs_to_organization(
+                user=user, session=session
+            )
 
         return user
 

@@ -1,4 +1,7 @@
-from .adapters import BelongsToOrganizationCheck
+from .adapters import (
+    OrganizationMembershipCheckImpl,
+    get_organization_membership_check,
+)
 from .events import (
     OrganizationCreatedEvent,
     OrganizationDeletedEvent,
@@ -36,7 +39,6 @@ from .services import (
 )
 
 __all__ = [
-    "BelongsToOrganizationCheck",
     "OrganizationCreateSchema",
     "OrganizationCreatedEvent",
     "OrganizationDeletedEvent",
@@ -49,6 +51,7 @@ __all__ = [
     "OrganizationMemberService",
     "OrganizationMemberUpdateSchema",
     "OrganizationMemberUpdatedEvent",
+    "OrganizationMembershipCheckImpl",
     "OrganizationModel",
     "OrganizationRepository",
     "OrganizationResponseSchema",
@@ -61,6 +64,7 @@ __all__ = [
     "create_organization_model",
     "generate_slug",
     "get_organization_member_service",
+    "get_organization_membership_check",
     "get_organization_service",
 ]
 

@@ -6,6 +6,10 @@ from sqlalchemy.orm import DeclarativeBase
 
 from gt.auth.events import event_bus
 from gt.auth.models._auth_user_model import TUser
+from gt.organizations.adapters import get_organization_membership_check
+from gt.organizations.interfaces._organization_membership_check import (
+    OrganizationMembershipCheck,
+)
 from gt.organizations.models import (
     OrganizationMemberModelBase,
     OrganizationModel,
@@ -107,6 +111,23 @@ class Organizations:
             organization_model=self.organization_model,
             member_model=self.organization_member_model,
         )
+
+    def get_belongs_to_org_check(self) -> OrganizationMembershipCheck:
+        """
+        Returns the :class:`OrganizationMembershipCheck` port for the auth
+        ``belongs_to_org`` policy check.
+
+        It rejects a request when no organization exists in the database yet
+        (``ORGANIZATION_NOT_SET_UP``) or when the current user is not an
+        active member of any organization (``ORGANIZATION_REQUIRED``).
+
+        Wire it into the auth policies with::
+
+            auth.configure_belongs_to_org_check(
+                organizations.get_belongs_to_org_check()
+            )
+        """
+        return get_organization_membership_check(self)
 
     async def get_db_session(self) -> AsyncGenerator[AsyncSession]:
         """

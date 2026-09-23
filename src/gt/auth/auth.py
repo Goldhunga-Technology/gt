@@ -1,5 +1,5 @@
 import inspect
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Callable
 from functools import wraps
 from typing import Any, Literal
 
@@ -9,7 +9,6 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase
 
 from gt.auth.dependencies._guards._require_access_guard import require_access
-from gt.auth.interfaces._policy_check_interface import IPolicyCheck
 from gt.auth.models._auth_user_account_model import create_auth_user_account_model
 from gt.auth.models._auth_user_model import create_auth_user_model
 from gt.auth.models._auth_user_onboarding_model import (
@@ -28,12 +27,15 @@ from .models import AuthUserModel, AuthUserOnboardingModelBase
 from .routers import create_auth_router
 from .services import ServiceRegistry
 
-_POLICY_CHECKS_LITERAL = Literal["mfa_required", "email_verified", "onboarded"]
+_POLICY_CHECKS_LITERAL = Literal[
+    "mfa_required", "email_verified", "onboarded", "belongs_to_org"
+]
 
 _CHECK_TO_GUARD_ARG: dict[_POLICY_CHECKS_LITERAL, Any] = {
     "mfa_required": {"mfa_required": True},
     "email_verified": {"email_verified": True},
     "onboarded": {"onboarded": True},
+    "belongs_to_org": {"belongs_to_org": True},
 }
 
 
@@ -89,7 +91,7 @@ class Auth[TUser: AuthUserModel]:
 
         ## policies
         self._policies: dict[str, Any] = {}
-        self._checks: dict[str, IPolicyCheck] = {}
+        self._belongs_to_org_check: Callable | None = None
 
     def init_app(self, app: FastAPI):
         """
@@ -124,18 +126,13 @@ class Auth[TUser: AuthUserModel]:
                 raise ValueError(f"Policy '{name}' is not registered.")
 
             kwargs = {}
-            custom_checks = []
             for c in checks:
-                if c in _CHECK_TO_GUARD_ARG:
-                    kwargs.update(_CHECK_TO_GUARD_ARG[c])
-                elif c in self._checks:
-                    custom_checks.append(c)
-                else:
+                guard_arg = _CHECK_TO_GUARD_ARG.get(c)
+                if guard_arg is None:
                     raise ValueError(f"Unknown policy check '{c}' in policy '{name}'.")
+                kwargs.update(guard_arg)
 
-            guard = Depends(
-                require_access(auth=self, custom_checks=custom_checks, **kwargs)
-            )
+            guard = Depends(require_access(auth=self, **kwargs))
 
             sig = inspect.signature(func)
             guard_param = inspect.Parameter(
@@ -224,23 +221,20 @@ class Auth[TUser: AuthUserModel]:
             raise ValueError(f"Policy '{name}' is already registered.")
         self._policies[name] = checks
 
-    def register_check(self, *, name: str, check: IPolicyCheck):
+    def configure_belongs_to_org_check(self, check: Callable):
         """
-        Registers a custom policy check under the given name.
+        Configures the resolver used by the ``belongs_to_org`` policy check.
 
-        Custom checks implement the :class:`IPolicyCheck` port and can be
-        referenced in any policy's ``checks`` list alongside the built-in
-        checks (``mfa_required``, ``email_verified``, ``onboarded``).
+        The resolver is provided by the organizations package via
+        ``organizations.get_belongs_to_org_check()``. It is an async callable
+        ``(user=..., session=...) -> None`` that raises a ``DomainException``
+        when the user is not an active member of any organization or when no
+        organization has been set up in the database.
+
+        Args:
+            check: The async resolver to run for ``belongs_to_org``.
         """
-        if name in _CHECK_TO_GUARD_ARG:
-            raise ValueError(f"Policy check '{name}' shadows a built-in check.")
-        if name in self._checks:
-            raise ValueError(f"Policy check '{name}' is already registered.")
-        if not isinstance(check, IPolicyCheck):
-            raise TypeError(
-                "Policy check must implement the IPolicyCheck interface (port)."
-            )
-        self._checks[name] = check
+        self._belongs_to_org_check = check
 
     ## ----------------------------------------------- Session Methods ----------------------------------------------- ##
 

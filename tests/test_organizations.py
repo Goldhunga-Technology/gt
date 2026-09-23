@@ -1,9 +1,12 @@
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from sqlalchemy.orm import DeclarativeBase, registry
 
+from gt.auth.models._auth_user_model import create_auth_user_model
 from gt.exceptions import ConflictException, DomainException
-from gt.organizations import BelongsToOrganizationCheck
+from gt.organizations import Organizations
 from gt.organizations.models import generate_slug
 from gt.organizations.schemas import OrganizationCreateSchema
 from gt.organizations.services import (
@@ -109,6 +112,18 @@ class TestOrganizationService:
         assert result is not None
         assert result.slug == "my-org"
 
+    async def test_is_any_organization_setup(self, models):
+        model = models["organization_model"]
+        service = get_organization_service(session=MagicMock(), model=model)
+
+        service._repository.get_first = AsyncMock(return_value=None)
+        assert await service.is_any_organization_setup() is False
+
+        service._repository.get_first = AsyncMock(
+            return_value=make_organization(models)
+        )
+        assert await service.is_any_organization_setup() is True
+
 
 class TestOrganizationMemberService:
     async def test_add_member(self, models):
@@ -193,36 +208,68 @@ class TestOrganizationMemberService:
             await service.remove_member(None, organization_uuid="test-uuid")
 
 
-class TestBelongsToOrganizationCheck:
-    def make_check(self, *, membership):
-        organizations = MagicMock()
+class TestBelongsToOrgCheck:
+    def make_resolver(self, *, org_exists=True, membership=None):
+        class Base(DeclarativeBase):
+            registry = registry()
+
+        user_model = create_auth_user_model(Base)
+        organizations = Organizations(
+            base=Base,
+            session_factory=async_sessionmaker[AsyncSession](),
+            user_model=user_model,
+        )
+
         services = MagicMock()
+        services.organization.is_any_organization_setup = AsyncMock(
+            return_value=org_exists
+        )
         services.member.get_member_by = AsyncMock(return_value=membership)
-        organizations.get_services.return_value = services
-        return BelongsToOrganizationCheck(organizations)
+        organizations.get_services = MagicMock(return_value=services)
 
-    async def test_passes_when_member(self, models):
-        user = MagicMock()
-        user.id = 1
-        member = make_member(models, user_id=user.id)
+        return organizations.get_belongs_to_org_check()
 
-        check = self.make_check(membership=member)
-        await check.check(user=user, session=MagicMock())
+    async def test_raises_when_no_organizations(self):
+        check = self.make_resolver(org_exists=False)
 
-    async def test_raises_when_not_member(self, models):
-        user = MagicMock()
-        user.id = 1
+        with pytest.raises(DomainException) as exc:
+            await check.check_user_belongs_to_organization(
+                user=MagicMock(), session=MagicMock()
+            )
 
-        check = self.make_check(membership=None)
-        with pytest.raises(DomainException):
-            await check.check(user=user, session=MagicMock())
+        assert exc.value.errors is not None
+        assert exc.value.errors["code"] == "ORGANIZATION_NOT_SET_UP"
+
+    async def test_raises_when_not_member(self):
+        check = self.make_resolver(org_exists=True, membership=None)
+
+        with pytest.raises(DomainException) as exc:
+            await check.check_user_belongs_to_organization(
+                user=MagicMock(), session=MagicMock()
+            )
+
+        assert exc.value.errors is not None
+        assert exc.value.errors["code"] == "ORGANIZATION_REQUIRED"
 
     async def test_raises_when_inactive_member(self, models):
-        user = MagicMock()
-        user.id = 1
-        member = make_member(models, user_id=user.id)
+        member = make_member(models)
         member.status = "inactive"
+        check = self.make_resolver(org_exists=True, membership=member)
 
-        check = self.make_check(membership=member)
-        with pytest.raises(DomainException):
-            await check.check(user=user, session=MagicMock())
+        with pytest.raises(DomainException) as exc:
+            await check.check_user_belongs_to_organization(
+                user=MagicMock(id=member.user_id), session=MagicMock()
+            )
+
+        assert exc.value.errors is not None
+        assert exc.value.errors["code"] == "ORGANIZATION_REQUIRED"
+
+    async def test_passes_when_active_member(self, models):
+        member = make_member(models)
+        check = self.make_resolver(org_exists=True, membership=member)
+
+        result = await check.check_user_belongs_to_organization(
+            user=MagicMock(id=member.user_id), session=MagicMock()
+        )
+
+        assert result is None

@@ -4,25 +4,8 @@ import pytest
 
 from gt.auth.dependencies._current_user import current_user
 from gt.auth.dependencies._guards._require_access_guard import require_access
-from gt.auth.interfaces._policy_check_interface import IPolicyCheck
 from gt.exceptions import DomainException
 from gt.exceptions._base_exceptions import InvalidException, UnauthorizedException
-
-
-class FakeCheck(IPolicyCheck):
-    """Test implementation of the IPolicyCheck port."""
-
-    def __init__(self, *, allow: bool = True):
-        self.calls = []
-        self.allow = allow
-
-    async def check(self, *, user, session) -> None:
-        self.calls.append((user, session))
-        if not self.allow:
-            raise InvalidException(
-                error="Custom check denied.",
-                errors={"code": "CUSTOM_DENIED"},
-            )
 
 
 def make_services(*, user_session=None, user=None):
@@ -119,37 +102,30 @@ class TestRequireAccess:
                 await dependency(request, session=MagicMock())
 
 
-class TestCustomPolicyChecks:
-    def test_register_check_rejects_builtin_name(self, auth):
-        with pytest.raises(ValueError):
-            auth.register_check(name="email_verified", check=FakeCheck())
+class TestBelongsToOrgPolicy:
+    def _dependency(self, *, auth):
+        request = MagicMock()
+        request.cookies = {"session_uuid": "valid-uuid"}
+        with patch(
+            "gt.auth.dependencies._current_user.current_user",
+            new=AsyncMock(return_value=MagicMock()),
+        ):
+            return require_access(auth=auth, belongs_to_org=True)
 
-    def test_register_check_rejects_duplicate(self, auth):
-        auth.register_check(name="custom", check=FakeCheck())
+    async def test_raises_when_resolver_not_configured(self, auth):
+        dependency = self._dependency(auth=auth)
 
-        with pytest.raises(ValueError):
-            auth.register_check(name="custom", check=FakeCheck())
+        with pytest.raises(DomainException) as exc:
+            await dependency(MagicMock(), session=MagicMock())
 
-    def test_register_check_rejects_non_port_implementation(self, auth):
-        with pytest.raises(TypeError):
-            auth.register_check(name="custom", check=object())
+        assert exc.value.errors is not None
+        assert exc.value.errors["code"] == "ORGANIZATION_NOT_SET_UP"
 
-    def test_policy_can_reference_registered_check(self, auth):
-        auth.register_check(name="custom", check=FakeCheck())
-        auth.register_policy(name="member", checks=["custom"])
-
-        @auth.policy("member")
-        async def handler():
-            return "ok"
-
-        assert handler is not None
-
-    async def test_check_passes(self, auth):
-        check = FakeCheck()
-        auth.register_check(name="custom", check=check)
-
-        session = MagicMock()
+    async def test_passes_when_resolver_passes(self, auth):
+        resolver = AsyncMock()
+        auth.configure_belongs_to_org_check(resolver)
         user = MagicMock()
+        session = MagicMock()
         request = MagicMock()
         request.cookies = {"session_uuid": "valid-uuid"}
 
@@ -157,23 +133,47 @@ class TestCustomPolicyChecks:
             "gt.auth.dependencies._current_user.current_user",
             new=AsyncMock(return_value=user),
         ):
-            dependency = require_access(auth=auth, custom_checks=["custom"])
+            dependency = require_access(auth=auth, belongs_to_org=True)
             result = await dependency(request, session=session)
 
         assert result is user
-        assert check.calls == [(user, session)]
+        resolver.check_user_belongs_to_organization.assert_awaited_once_with(
+            user=user, session=session
+        )
 
-    async def test_denies_when_check_raises(self, auth):
-        check = FakeCheck(allow=False)
-        auth.register_check(name="custom", check=check)
+    async def test_propagates_resolver_denial(self, auth):
+        async def deny(*, user, session):
+            raise DomainException(
+                error="Organization is required.",
+                errors={"code": "ORGANIZATION_REQUIRED"},
+            )
 
-        request = MagicMock()
-        request.cookies = {"session_uuid": "valid-uuid"}
+        check = MagicMock()
+        check.check_user_belongs_to_organization = deny
+        auth.configure_belongs_to_org_check(check)
+        dependency = self._dependency(auth=auth)
 
-        with patch(
-            "gt.auth.dependencies._current_user.current_user",
-            new=AsyncMock(return_value=MagicMock()),
-        ):
-            dependency = require_access(auth=auth, custom_checks=["custom"])
-            with pytest.raises(InvalidException):
-                await dependency(request, session=MagicMock())
+        with pytest.raises(DomainException) as exc:
+            await dependency(MagicMock(), session=MagicMock())
+
+        assert exc.value.errors is not None
+        assert exc.value.errors["code"] == "ORGANIZATION_REQUIRED"
+
+    def test_policy_can_reference_belongs_to_org(self, auth):
+        auth.configure_belongs_to_org_check(AsyncMock())
+        auth.register_policy(name="member", checks=["email_verified", "belongs_to_org"])
+
+        @auth.policy("member")
+        async def handler():
+            return "ok"
+
+        assert handler is not None
+
+    def test_policy_rejects_unknown_check(self, auth):
+        auth.register_policy(name="member", checks=["nonsense"])
+
+        with pytest.raises(ValueError):
+
+            @auth.policy("member")
+            async def handler():
+                return "ok"

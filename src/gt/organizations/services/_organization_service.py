@@ -197,6 +197,25 @@ class OrganizationService[TOrganization: OrganizationModel]:
                 internal_details=str(e),
             ) from e
 
+    async def is_any_organization_setup(self) -> bool:
+        """Check whether at least one organization exists in the database.
+
+        Returns:
+            True when at least one organization has been created.
+
+        Raises:
+            DomainException: On unexpected failures.
+        """
+        try:
+            return await self._repository.get_first() is not None
+        except DomainException:
+            raise
+        except Exception as e:
+            raise DomainException(
+                error="Failed to check organization setup.",
+                internal_details=str(e),
+            ) from e
+
 
 def get_organization_service(
     session: AsyncSession, model: type[TOrganization]

@@ -1,5 +1,5 @@
 from datetime import UTC, datetime, timedelta
-from typing import cast
+from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -7,11 +7,16 @@ import pytest
 from gt.auth.models._auth_user_model import AuthUserModel
 from gt.auth.services._auth_email_service import AuthEmailService
 from gt.auth.services._auth_login_service import AuthLoginService
+from gt.auth.services._auth_user_onboarding_service import (
+    AuthUserOnboardingService,
+    get_auth_user_onboarding_service,
+)
 from gt.auth.services._auth_user_service import AuthUserService
 from gt.exceptions import ConflictException, NotFoundException
 from gt.exceptions._base_exceptions import InvalidException
 
 T_USER_MODEL = cast("type[AuthUserModel]", MagicMock())
+T_ONBOARDING_MODEL = cast("type[Any]", MagicMock())
 
 
 class TestTokenGenerator:
@@ -216,3 +221,53 @@ class TestAuthEmailService:
         )
         user_service.get_email_verification_token.assert_awaited_once()
         publish.assert_awaited_once()
+
+
+def make_onboarding_service(*, existing=None, user=None):
+    repository = MagicMock()
+    repository.get_by = AsyncMock(return_value=existing)
+    repository.add = AsyncMock(return_value="onboarding")
+    user_service = MagicMock()
+    user_service.get_user_by = AsyncMock(return_value=user)
+    user_service.update_user = AsyncMock()
+
+    service = AuthUserOnboardingService(
+        repository=repository,
+        model=T_ONBOARDING_MODEL,
+        user_service=user_service,
+    )
+    return service, repository, user_service
+
+
+class TestAuthOnboardingService:
+    async def test_returns_onboarding_service(self, models):
+        from gt.auth.models._auth_user_onboarding_model import (
+            create_auth_user_onboarding_model,
+        )
+
+        onboarding_model = create_auth_user_onboarding_model(
+            models["base"], models["user_model"]
+        )
+        service = get_auth_user_onboarding_service(
+            session=MagicMock(), model=onboarding_model
+        )
+        assert isinstance(service, AuthUserOnboardingService)
+
+    async def test_add_onboarding_marks_user_onboarded(self):
+        user = MagicMock()
+        user.is_onboarded = False
+        service, _, user_service = make_onboarding_service(existing=None, user=user)
+
+        result = await service.add_onboarding(
+            user_id=1, theme="dark", referral_source="friend"
+        )
+
+        assert result == "onboarding"
+        assert user.is_onboarded is True
+        user_service.update_user.assert_awaited_once_with(user)
+
+    async def test_add_onboarding_raises_when_exists(self):
+        service, _, _ = make_onboarding_service(existing="row")
+
+        with pytest.raises(InvalidException):
+            await service.add_onboarding(user_id=1, theme="dark")

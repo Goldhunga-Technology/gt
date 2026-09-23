@@ -95,7 +95,9 @@ class ServiceRegistry:
     def onboarding(self):
         """Service for user onboarding operations."""
         return get_auth_user_onboarding_service(
-            session=self._session, model=self._onboarding_model
+            session=self._session,
+            model=self._onboarding_model,
+            user_service=self.user,
         )
 
     @cached_property

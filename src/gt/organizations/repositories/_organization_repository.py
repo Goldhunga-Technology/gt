@@ -61,6 +61,22 @@ class OrganizationRepository[TOrganization: OrganizationModel]:
                 internal_details=str(e),
             ) from e
 
+    async def get_first(self) -> TOrganization | None:
+        """Retrieve the first organization record in the database.
+
+        Returns:
+            The first organization instance or None when none exist.
+        """
+        try:
+            stmt = select(self.model).limit(1)
+            result = await self.session.execute(stmt)
+            return result.scalar_one_or_none()
+        except Exception as e:
+            raise CreateException(
+                error="Failed to retrieve organization from the database.",
+                internal_details=str(e),
+            ) from e
+
     async def update(self, organization: TOrganization) -> TOrganization:
         """Update an existing organization record in the database.
 
